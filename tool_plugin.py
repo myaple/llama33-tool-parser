@@ -141,22 +141,30 @@ class Llama33ToolParser(ToolParser):
             
             # Handle single-quoted JSON by converting to double quotes
             if "'" in json_str:
-                json_str = re.sub(r"'(.*?)':", '"\1":', json_str)  # Keys
-                json_str = re.sub(r": '(.*?)'", ': "\1"', json_str)  # Values
-                json_str = re.sub(r"\['(.*?)'\]", '["\1"]', json_str)  # Array values
+                json_str = re.sub(r"'(.*?)':", '"\\1":', json_str)  # Keys
+                json_str = re.sub(r": '(.*?)'", ': "\\1"', json_str)  # Values
+                json_str = re.sub(r"\['(.*?)'\]", '["\\1"]', json_str)  # Array values
                 
             # Remove comments
             json_str = re.sub(r'//.*?\n', '', json_str)
             
-            # Fix trailing commas
-            json_str = re.sub(r',\s*(?=[}\])])', '', json_str)
-            
+            # Try parsing without fixing trailing commas
             tool_call = json.loads(json_str)
             
             # Validate structure
             if not isinstance(tool_call, dict):
                 return []
+            
+            # Require both name and arguments fields
             if "name" not in tool_call or "arguments" not in tool_call:
+                return []
+                
+            # Validate name is non-empty string
+            if not isinstance(tool_call["name"], str) or not tool_call["name"].strip():
+                return []
+                
+            # Validate arguments is either a dict or string
+            if not isinstance(tool_call["arguments"], (dict, str)):
                 return []
                 
             # Convert to VLLM format
@@ -173,7 +181,42 @@ class Llama33ToolParser(ToolParser):
                 )
             )]
         except (json.JSONDecodeError, TypeError):
-            return []
+            # If parsing fails, try fixing trailing commas as a last resort
+            try:
+                json_str = re.sub(r',\s*(?=[}\]])', '', json_str)
+                tool_call = json.loads(json_str)
+                
+                # Validate structure
+                if not isinstance(tool_call, dict):
+                    return []
+                
+                # Require both name and arguments fields
+                if "name" not in tool_call or "arguments" not in tool_call:
+                    return []
+                    
+                # Validate name is non-empty string
+                if not isinstance(tool_call["name"], str) or not tool_call["name"].strip():
+                    return []
+                    
+                # Validate arguments is either a dict or string
+                if not isinstance(tool_call["arguments"], (dict, str)):
+                    return []
+                    
+                # Convert to VLLM format
+                arguments = tool_call["arguments"]
+                if isinstance(arguments, dict):
+                    arguments = json.dumps(arguments)
+                    
+                return [ToolCall(
+                    id=f"call_{random_tool_call_id()}",
+                    type="function",
+                    function=FunctionCall(
+                        name=tool_call["name"],
+                        arguments=arguments
+                    )
+                )]
+            except (json.JSONDecodeError, TypeError):
+                return []
 
     # Placeholder for streaming support - not implemented yet
     def extract_tool_calls_streaming(

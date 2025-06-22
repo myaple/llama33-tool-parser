@@ -81,7 +81,15 @@ class TestLlama33ToolParser(unittest.TestCase):
         self.assertEqual(result.tool_calls[0].function.name, "trailing_comma")
     
     def test_commented_json(self):
-        output = """```json\n{\n    // This is a comment\n    \"name\": \"commented_tool\",\n    \"arguments\": {\n        \"param\": true\n    }\n}\n```"""
+        output = """```json
+{
+    // This is a comment
+    \"name\": \"commented_tool\",
+    \"arguments\": {
+        \"param\": true
+    }
+}
+```"""
         result = self.parser.extract_tool_calls(output, self.request)
         self.assertTrue(result.tools_called)
         self.assertEqual(len(result.tool_calls), 1)
@@ -90,14 +98,81 @@ class TestLlama33ToolParser(unittest.TestCase):
     def test_multiple_calls_returns_first_valid(self):
         output = """Call 1: 
 ```json
-{"name": "first_tool", "arguments": {"param": 1}}
+{\"name\": \"first_tool\", \"arguments\": {\"param\": 1}}
 ```
 Call 2:
-{"name": "second_tool", "arguments": {"param": 2}}"""
+{\"name\": \"second_tool\", \"arguments\": {\"param\": 2}}"""
         result = self.parser.extract_tool_calls(output, self.request)
         self.assertTrue(result.tools_called)
         self.assertEqual(len(result.tool_calls), 1)
         self.assertEqual(result.tool_calls[0].function.name, "first_tool")
+        
+    def test_invalid_json_structure(self):
+        """Test JSON that doesn't match tool call schema"""
+        output = """```json
+{
+    \"tool_name\": \"weather_search\",
+    \"params\": {\"location\": \"London\"}
+}
+```"""
+        result = self.parser.extract_tool_calls(output, self.request)
+        self.assertFalse(result.tools_called)
+        self.assertEqual(len(result.tool_calls), 0)
+        self.assertEqual(result.content, output)
+        
+    def test_missing_required_fields(self):
+        """Test JSON missing required fields"""
+        cases = [
+            ("{\"name\": \"no_arguments\"}", "Missing 'arguments' field"),
+            ("{\"arguments\": {\"location\": \"Paris\"}}", "Missing 'name' field"),
+            ("{\"name\": \"\", \"arguments\": {}}", "Empty 'name' field")
+        ]
+        
+        for json_str, description in cases:
+            with self.subTest(description=description):
+                output = f"Tool call: {json_str}"
+                result = self.parser.extract_tool_calls(output, self.request)
+                self.assertFalse(result.tools_called, f"Should fail: {description}")
+                self.assertEqual(len(result.tool_calls), 0)
+                
+    def test_non_object_json(self):
+        """Test non-object JSON types"""
+        cases = [
+            ("\"just a string\"", "String value"),
+            ("42", "Number value"),
+            ("[{\"name\": \"array_tool\"}]", "Array value")
+        ]
+        
+        for json_str, description in cases:
+            with self.subTest(description=description):
+                output = "```json\n" + json_str + "\n```"
+                result = self.parser.extract_tool_calls(output, self.request)
+                self.assertFalse(result.tools_called, f"Should fail: {description}")
+                self.assertEqual(len(result.tool_calls), 0)
+                
+    def test_malformed_json(self):
+        """Test JSON with syntax errors"""
+        # This JSON is missing a closing brace which is unrecoverable
+        output = """```json
+{\"name\": \"malformed\", \"arguments\": { \"key\": \"value\" }
+```"""
+        result = self.parser.extract_tool_calls(output, self.request)
+        self.assertFalse(result.tools_called)
+        self.assertEqual(len(result.tool_calls), 0)
+        
+    def test_nested_json(self):
+        """Test nested JSON that doesn't match tool schema"""
+        output = """```json
+{
+    \"tool\": {
+        \"name\": \"nested_tool\",
+        \"arguments\": {\"param\": true}
+    }
+}
+```"""
+        result = self.parser.extract_tool_calls(output, self.request)
+        self.assertFalse(result.tools_called)
+        self.assertEqual(len(result.tool_calls), 0)
 
 if __name__ == "__main__":
     unittest.main()
