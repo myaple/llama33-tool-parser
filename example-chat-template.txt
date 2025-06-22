@@ -42,7 +42,7 @@
 {{- "Today Date: " + date_string + "\n\n" }}
 {%- if tools is not none and not tools_in_user_message %}
     {{- "You have access to the following functions. To call a function, please respond with JSON for a function call. " }}
-    {{- 'Respond in the format {"name": function name, "parameters": dictionary of argument name and its value}. ' }}
+    {{- 'Respond in the format {\"name\": function name, \"parameters\": dictionary of argument name and its value}. ' }}
     {{- "Do not use variables.\n\n" }}
     {%- for t in tools %}
         {{- t | tojson(indent=4) }}
@@ -68,13 +68,13 @@
     {{- '<|start_header_id|>user<|end_header_id|>\n\n' -}}
     {{- "Given the following functions, please respond with a JSON for a function call " }}
     {{- "with its proper arguments that best answers the given prompt.\n\n" }}
-    {{- 'Respond in the format {"name": function name, "parameters": dictionary of argument name and its value}. ' }}
+    {{- 'Respond in the format {\"name\": function name, \"parameters\": dictionary of argument name and its value}. ' }}
     {{- "Do not use variables.\n\n" }}
     {%- for t in tools %}
         {{- t | tojson(indent=4) }}
         {{- "\n\n" }}
     {%- endfor %}
-    {{- first_user_message + "<|eot_id|>"}}
+    {{- 'detailed thinking on ' + first_user_message + "<|eot_id|>"}}
 {%- endif %}
 
 {%- for message in messages %}
@@ -100,9 +100,7 @@
         {%- set tool_call = message.tool_calls[0].function %}
         {{- '<|start_header_id|>assistant<|end_header_id|>\n\n' -}}
         {{- '{"name": "' + tool_call.name + '", ' }}
-        {{- '"parameters": ' }}
-        {{- tool_call.arguments | tojson }}
-        {{- "}" }}
+        {{- '"parameters": ' + tool_call.arguments + '}' }}
         {{- "<|eot_id|>" }}
     {%- elif message.role == "tool" or message.role == "ipython" %}
         {{- "<|start_header_id|>ipython<|end_header_id|>\n\n" }}
