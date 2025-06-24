@@ -6,8 +6,7 @@ from typing import Optional, Union
 
 from transformers import PreTrainedTokenizerBase
 
-from vllm.entrypoints.openai.protocol import (ChatCompletionRequest,
-                                              DeltaMessage)
+from vllm.entrypoints.openai.protocol import ChatCompletionRequest, DeltaMessage
 from vllm.logger import init_logger
 from vllm.reasoning import ReasoningParser, ReasoningParserManager
 
@@ -35,14 +34,16 @@ class DeepSeekR1ReasoningParser(ReasoningParser):
         if not self.model_tokenizer:
             raise ValueError(
                 "The model tokenizer must be passed to the ReasoningParser "
-                "constructor during construction.")
+                "constructor during construction."
+            )
 
         self.start_token_id = self.vocab.get(self.start_token)
         self.end_token_id = self.vocab.get(self.end_token)
         if self.start_token_id is None or self.end_token_id is None:
             raise RuntimeError(
                 "DeepSeek R1 reasoning parser could not locate think start/end "
-                "tokens in the tokenizer!")
+                "tokens in the tokenizer!"
+            )
 
     def is_reasoning_end(self, input_ids: list[int]) -> bool:
         return self.end_token_id in input_ids
@@ -54,7 +55,7 @@ class DeepSeekR1ReasoningParser(ReasoningParser):
         if self.end_token_id not in input_ids[:-1]:
             return []
         else:
-            return input_ids[input_ids.index(self.end_token_id) + 1:]
+            return input_ids[input_ids.index(self.end_token_id) + 1 :]
 
     def _remove_leading_newlines(self, content: str) -> str:
         """Remove exactly two leading newlines if present"""
@@ -78,7 +79,7 @@ class DeepSeekR1ReasoningParser(ReasoningParser):
         For text <think>abc</think>xyz:
         - 'abc' goes to reasoning_content
         - 'xyz' goes to content
-        
+
         Modified to handle models that output two newlines after </think>
         """
         # Skip single start token
@@ -93,7 +94,7 @@ class DeepSeekR1ReasoningParser(ReasoningParser):
                 # extract reasoning content
                 end_index = delta_text.find(self.end_token)
                 reasoning_content = delta_text[:end_index]
-                content = delta_text[end_index + len(self.end_token):]
+                content = delta_text[end_index + len(self.end_token) :]
                 content = self._remove_leading_newlines(content)
                 return DeltaMessage(
                     reasoning_content=reasoning_content,
@@ -113,9 +114,10 @@ class DeepSeekR1ReasoningParser(ReasoningParser):
                 # <think> in delta, </think> in delta, extract reasoning content
                 start_index = delta_text.find(self.start_token)
                 end_index = delta_text.find(self.end_token)
-                reasoning_content = delta_text[start_index +
-                                               len(self.start_token):end_index]
-                content = delta_text[end_index + len(self.end_token):]
+                reasoning_content = delta_text[
+                    start_index + len(self.start_token) : end_index
+                ]
+                content = delta_text[end_index + len(self.end_token) :]
                 content = self._remove_leading_newlines(content)
                 return DeltaMessage(
                     reasoning_content=reasoning_content,
@@ -134,7 +136,7 @@ class DeepSeekR1ReasoningParser(ReasoningParser):
                 # extract reasoning content and content
                 end_index = delta_text.find(self.end_token)
                 reasoning_content = delta_text[:end_index]
-                content = delta_text[end_index + len(self.end_token):]
+                content = delta_text[end_index + len(self.end_token) :]
                 content = self._remove_leading_newlines(content)
                 return DeltaMessage(
                     reasoning_content=reasoning_content,
@@ -149,7 +151,7 @@ class DeepSeekR1ReasoningParser(ReasoningParser):
                 return DeltaMessage(reasoning_content=delta_text)
 
     def extract_reasoning_content(
-            self, model_output: str, request: ChatCompletionRequest
+        self, model_output: str, request: ChatCompletionRequest
     ) -> tuple[Optional[str], Optional[str]]:
         """
         Extract reasoning content from the model output.
@@ -157,15 +159,16 @@ class DeepSeekR1ReasoningParser(ReasoningParser):
         For text <think>abc</think>xyz:
         - 'abc' goes to reasoning_content
         - 'xyz' goes to content
-        
+
         Modified to handle models that output two newlines after </think>
         """
 
         # Check if the start token is present in the model output, remove it
         # if it is present.
         model_output_parts = model_output.partition(self.start_token)
-        model_output = model_output_parts[2] if model_output_parts[
-            1] else model_output_parts[0]
+        model_output = (
+            model_output_parts[2] if model_output_parts[1] else model_output_parts[0]
+        )
 
         # DeepSeek R1 doesn't generate <think> now.
         # Thus we assume the reasoning content is always at the start.
@@ -173,8 +176,7 @@ class DeepSeekR1ReasoningParser(ReasoningParser):
         if self.end_token not in model_output:
             return model_output, None
         else:
-            reasoning_content, _, content = model_output.partition(
-                self.end_token)
+            reasoning_content, _, content = model_output.partition(self.end_token)
             # Remove exactly two newlines if present at start of content
             if content:
                 content = content.strip()
