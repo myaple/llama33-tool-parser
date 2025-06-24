@@ -175,6 +175,100 @@ Call 2:
         self.assertFalse(result.tools_called)
         self.assertEqual(len(result.tool_calls), 0)
 
+    def test_multiple_valid_json_returns_first(self):
+        """Test parser picks first valid JSON when multiple exist"""
+        output = """Here's some text before the first tool call.
+        
+```json
+{
+    "name": "first_tool",
+    "arguments": {"param": "value1"}
+}
+```
+        
+Now some text between the tool calls.
+        
+```json
+{
+    "name": "second_tool",
+    "arguments": {"param": "value2"}
+}
+```
+        
+And some text after the tool calls."""
+
+        result = self.parser.extract_tool_calls(output, self.request)
+        self.assertTrue(result.tools_called)
+        self.assertEqual(len(result.tool_calls), 1)
+        self.assertEqual(result.tool_calls[0].function.name, "first_tool")
+        self.assertIn('"param": "value1"', result.tool_calls[0].function.arguments)
+        self.assertEqual(
+            result.content.strip(), "Here's some text before the first tool call."
+        )
+
+    def test_markdown_then_json(self):
+        """Test parser picks markdown block when it comes before JSON"""
+        output = """First tool call in markdown:
+        
+```json
+{
+    "name": "markdown_tool",
+    "arguments": {"param": "md_value"}
+}
+```
+        
+Then a JSON object:
+        
+{"name": "json_tool", "arguments": {"param": "json_value"}}"""
+
+        result = self.parser.extract_tool_calls(output, self.request)
+        self.assertTrue(result.tools_called)
+        self.assertEqual(len(result.tool_calls), 1)
+        self.assertEqual(result.tool_calls[0].function.name, "markdown_tool")
+        self.assertIn('"param": "md_value"', result.tool_calls[0].function.arguments)
+        self.assertEqual(result.content.strip(), "First tool call in markdown:")
+
+    def test_json_then_markdown(self):
+        """Test parser picks JSON when it comes before markdown block"""
+        output = """First tool call as JSON:
+        
+{"name": "json_tool", "arguments": {"param": "json_value"}}
+        
+Then a markdown block:
+        
+```json
+{
+    "name": "markdown_tool",
+    "arguments": {"param": "md_value"}
+}
+```"""
+
+        result = self.parser.extract_tool_calls(output, self.request)
+        self.assertTrue(result.tools_called)
+        self.assertEqual(len(result.tool_calls), 1)
+        self.assertEqual(result.tool_calls[0].function.name, "json_tool")
+        self.assertIn('"param": "json_value"', result.tool_calls[0].function.arguments)
+        self.assertEqual(result.content.strip(), "First tool call as JSON:")
+
+    def test_multiple_plain_json_objects_returns_first(self):
+        """Test parser picks first JSON when multiple plain JSON objects exist"""
+        output = """First tool call:
+        
+{"name": "first_plain_tool", "arguments": {"param": "plain1"}}
+        
+Now some text between the tool calls.
+        
+{"name": "second_plain_tool", "arguments": {"param": "plain2"}}
+        
+And some text after the tool calls."""
+
+        result = self.parser.extract_tool_calls(output, self.request)
+        self.assertTrue(result.tools_called)
+        self.assertEqual(len(result.tool_calls), 1)
+        self.assertEqual(result.tool_calls[0].function.name, "first_plain_tool")
+        self.assertIn('"param": "plain1"', result.tool_calls[0].function.arguments)
+        self.assertEqual(result.content.strip(), "First tool call:")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -46,7 +46,11 @@ class Llama33ToolParser(ToolParser):
         - JSON wrapped in markdown code blocks (```json)
         - Tool calls with interspersed text
         - Invalid JSON recovery
+
+        Always picks the first valid tool call in the text.
         """
+        candidates = []
+
         # Special token extraction
         if self.tool_use_start in model_output and self.tool_use_end in model_output:
             start_idx = model_output.index(self.tool_use_start) + len(
@@ -55,45 +59,80 @@ class Llama33ToolParser(ToolParser):
             end_idx = model_output.index(self.tool_use_end)
             json_str = model_output[start_idx:end_idx].strip()
             tool_calls = self._parse_json_tool_call(json_str)
-            content = model_output[: model_output.index(self.tool_use_start)].strip()
-            return ExtractedToolCallInformation(
-                tools_called=bool(tool_calls),
-                tool_calls=tool_calls,
-                content=content or None,
-            )
+            if tool_calls:
+                content = model_output[
+                    : model_output.index(self.tool_use_start)
+                ].strip()
+                candidates.append(
+                    {
+                        "start": model_output.index(self.tool_use_start),
+                        "tool_calls": tool_calls,
+                        "content": content or None,
+                    }
+                )
 
         # Markdown code block extraction
-        json_blocks = self._extract_json_blocks(model_output)
-        if json_blocks:
-            # Extract content before the markdown block
-            content = model_output.split("```json", 1)[0].strip()
-            tool_calls = self._parse_json_tool_call(json_blocks[0])
+        json_block_info = self._extract_json_blocks(model_output)
+        for block_info in json_block_info:
+            tool_calls = self._parse_json_tool_call(block_info["inner_content"])
             if tool_calls:
-                return ExtractedToolCallInformation(
-                    tools_called=True, tool_calls=tool_calls, content=content or None
+                # Use the start position of the entire markdown block
+                content = model_output[: block_info["block_start"]].strip()
+                candidates.append(
+                    {
+                        "start": block_info["block_start"],
+                        "tool_calls": tool_calls,
+                        "content": content or None,
+                    }
                 )
 
-        # Fallback: JSON pattern search
+        # JSON pattern search
         json_match = self._find_json_in_text(model_output)
         if json_match:
-            # Extract content before the JSON object
-            content = model_output.split(json_match, 1)[0].strip()
             tool_calls = self._parse_json_tool_call(json_match)
             if tool_calls:
-                return ExtractedToolCallInformation(
-                    tools_called=True, tool_calls=tool_calls, content=content or None
-                )
+                # Find the start position of this JSON match
+                json_start = model_output.find(json_match)
+                if json_start != -1:
+                    content = model_output[:json_start].strip()
+                    candidates.append(
+                        {
+                            "start": json_start,
+                            "tool_calls": tool_calls,
+                            "content": content or None,
+                        }
+                    )
+
+        # If we found any candidates, pick the one with the earliest start position
+        if candidates:
+            # Sort candidates by their start position
+            candidates.sort(key=lambda x: x["start"])
+            earliest = candidates[0]
+            return ExtractedToolCallInformation(
+                tools_called=True,
+                tool_calls=earliest["tool_calls"],
+                content=earliest["content"] or None,
+            )
 
         # No tool calls found
         return ExtractedToolCallInformation(
             tools_called=False, tool_calls=[], content=model_output
         )
 
-    def _extract_json_blocks(self, text: str) -> List[str]:
-        """Extracts content from markdown code blocks"""
+    def _extract_json_blocks(self, text: str) -> List[Dict[str, Any]]:
+        """Extracts content from markdown code blocks with positions"""
         pattern = r"```(?:json)?\s*\n(.*?)\n```"
-        matches = re.findall(pattern, text, re.DOTALL)
-        return [match.strip() for match in matches]
+        matches = re.finditer(pattern, text, re.DOTALL)
+        blocks = []
+        for match in matches:
+            blocks.append(
+                {
+                    "inner_content": match.group(1).strip(),
+                    "block_start": match.start(),
+                    "block_end": match.end(),
+                }
+            )
+        return blocks
 
     def _find_json_in_text(self, text: str) -> Optional[str]:
         """Finds first valid JSON object in text"""
